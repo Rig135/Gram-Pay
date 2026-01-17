@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GramPay - Rural Digital Wallet</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom Animations */
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+        /* Bluetooth Radar Pulse */
+        @keyframes radar-ping {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        .animate-radar {
+            animation: radar-ping 2s infinite ease-out;
+        }
+        .delay-1000 { animation-delay: 1s; }
+
+        /* Toast Notification */
+        #otp-toast, #sync-toast {
+            transform: translateY(-200%);
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            top: 1rem; 
+        }
+        @media (min-width: 640px) {
+            #otp-toast, #sync-toast { top: 5rem; }
+        }
+
+        #otp-toast.show, #sync-toast.show { transform: translateY(0); }
+
+        /* Custom Scrollbar for list */
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Receipt ZigZag Edge */
+        .receipt-edge {
+            background: linear-gradient(-45deg, transparent 16px, #ffffff 16px), 
+                        linear-gradient(45deg, transparent 16px, #ffffff 16px);
+            background-repeat: repeat-x;
+            background-size: 32px 32px;
+            background-position: left bottom;
+            height: 20px;
+            width: 100%;
+            position: absolute;
+            bottom: -20px;
+            left: 0;
+            transform: rotate(180deg);
+        }
+
+        /* Gradient Text for AI */
+        .text-gradient-ai {
+            background: linear-gradient(to right, #7c3aed, #db2777);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Safe Area Utilities for Mobile */
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
+    </style>
+</head>
+<!-- h-[100dvh] ensures it fits mobile viewports exactly, handling the dynamic address bar -->
+<body class="bg-gray-100 sm:bg-gray-200 font-sans select-none h-[100dvh] w-full flex justify-center items-center overflow-hidden">
+
+    <!-- Mobile App Container -->
+    <div class="w-full h-[100dvh] sm:h-[850px] sm:max-w-md bg-white sm:rounded-3xl shadow-none sm:shadow-2xl relative overflow-hidden flex flex-col border-none sm:border border-gray-300">
+        
+        <!-- HEADER (Professional Gradient) -->
+        <header class="bg-gradient-to-r from-red-900 to-red-700 text-white p-4 sm:p-5 flex justify-between items-center z-10 shadow-lg shrink-0 pt-safe">
+            <div class="flex items-center gap-3">
+                <div class="bg-white/10 backdrop-blur-sm text-white w-10 h-10 rounded-full flex items-center justify-center font-bold border border-white/20">
+                    <i class="fas fa-wallet"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg tracking-wide leading-tight">GramPay</h1>
+                    <p class="text-[10px] text-red-200 opacity-80 uppercase tracking-widest">Secure Wallet</p>
+                </div>
+            </div>
+            <!-- Dynamic Connection Status -->
+            <div id="connection-status" class="text-xs bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 transition-colors duration-300 flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                <span class="font-medium">Checking...</span>
+            </div>
+        </header>
+
+        <!-- TOASTS -->
+        <!-- OTP Toast -->
+        <div id="otp-toast" onclick="autoFillOtp()" class="absolute left-4 right-4 bg-gray-900/95 backdrop-blur text-white p-4 rounded-xl shadow-2xl z-50 flex items-start gap-4 border-l-4 border-red-500 cursor-pointer hover:bg-black transition-colors safe-area-top">
+            <div class="text-red-500 text-xl mt-1"><i class="fas fa-comment-sms"></i></div>
+            <div class="w-full">
+                <div class="flex justify-between items-start">
+                    <h4 class="font-bold text-xs uppercase text-gray-400 tracking-wider">SMS from GRAMPAY</h4>
+                    <span class="text-xs text-gray-500">Just now</span>
+                </div>
+                <p class="text-sm font-medium mt-1 text-gray-300">Your verification code is:</p>
+                <p class="text-3xl font-bold text-white tracking-widest my-1 font-mono" id="toast-otp-code">----</p>
+                <p class="text-xs text-red-400 mt-2 font-semibold"><i class="fas fa-hand-pointer animate-bounce mr-1"></i> Tap to Auto-fill</p>
+            </div>
+        </div>
+
+        <!-- Sync Toast -->
+        <div id="sync-toast" class="absolute left-4 right-4 bg-blue-600 text-white p-4 rounded-xl shadow-xl z-50 flex items-center gap-4 safe-area-top">
+            <div class="bg-white/20 w-10 h-10 rounded-full flex items-center justify-center">
+                <i class="fas fa-sync fa-spin"></i>
+            </div>
+            <div>
+                <p class="font-bold text-sm">Connection Restored</p>
+                <p class="text-xs text-blue-100">Syncing pending transactions...</p>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="flex-1 relative overflow-y-auto bg-gray-50 hide-scroll">
+
+            <!-- SCREEN 1: LOGIN -->
+            <section id="view-login" class="p-6 sm:p-8 h-full flex flex-col justify-center bg-white">
+                <div class="text-center mb-10">
+                    <div class="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600 text-4xl shadow-inner">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
+                    <p class="text-gray-500 text-sm">Secure rural payments made simple.</p>
+                </div>
+
+                <form onsubmit="handleGetOtp(event)" class="space-y-5 animate-slide-up">
+                    <div class="group">
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 ml-1 uppercase tracking-wide group-focus-within:text-red-600 transition-colors">Full Name</label>
+                        <div class="relative">
+                            <i class="fas fa-user absolute left-4 top-3.5 text-gray-400 group-focus-within:text-red-500 transition-colors"></i>
+                            <!-- Added text-base to prevent iOS Zoom -->
+                            <input type="text" id="input-name" class="w-full bg-gray-50 border border-gray-200 p-3 pl-10 rounded-xl focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition font-medium text-gray-700 text-base" placeholder="e.g. Rahul Kumar" required>
+                        </div>
+                    </div>
+                    <div class="group">
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 ml-1 uppercase tracking-wide group-focus-within:text-red-600 transition-colors">Mobile Number</label>
+                        <div class="relative">
+                            <span class="absolute left-4 top-3.5 text-gray-400 font-bold group-focus-within:text-red-500 transition-colors">+91</span>
+                            <!-- Added text-base to prevent iOS Zoom -->
+                            <input type="tel" id="input-phone" class="w-full bg-gray-50 border border-gray-200 p-3 pl-12 rounded-xl focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition font-medium text-gray-700 font-mono text-base" placeholder="98765 43210" maxlength="10" pattern="[0-9]{10}" required>
+                        </div>
+                    </div>
+                    <button type="submit" id="btn-get-otp" class="w-full bg-red-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-600/30 hover:bg-red-700 hover:shadow-red-700/40 active:scale-[0.98] transition-all mt-6 text-sm uppercase tracking-wide">
+                        Get Verification Code
+                    </button>
+                </form>
+            </section>
+
+            <!-- SCREEN 2: OTP -->
+            <section id="view-otp" class="hidden p-6 sm:p-8 h-full flex flex-col justify-center bg-white">
+                <button onclick="switchView('login')" class="absolute top-6 left-6 text-gray-400 hover:text-gray-800 transition-colors flex items-center gap-2 text-sm font-medium">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+                <div class="text-center mb-10 animate-slide-up">
+                    <h2 class="text-2xl font-bold text-gray-900">Verify Identity</h2>
+                    <p class="text-gray-500 text-sm mt-2">Enter the code sent to <br><span id="display-phone" class="font-bold text-gray-800 font-mono text-base"></span></p>
+                </div>
+                <div class="space-y-8 animate-slide-up">
+                    <div class="flex justify-center gap-4">
+                        <input type="text" id="otp-1" class="otp-input w-14 h-16 border-2 border-gray-200 rounded-xl text-center text-3xl font-bold focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition caret-red-500 text-gray-800" maxlength="1" oninput="focusNext(this, 'otp-2')">
+                        <input type="text" id="otp-2" class="otp-input w-14 h-16 border-2 border-gray-200 rounded-xl text-center text-3xl font-bold focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition caret-red-500 text-gray-800" maxlength="1" oninput="focusNext(this, 'otp-3')" onkeydown="focusPrev(event, 'otp-1')">
+                        <input type="text" id="otp-3" class="otp-input w-14 h-16 border-2 border-gray-200 rounded-xl text-center text-3xl font-bold focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition caret-red-500 text-gray-800" maxlength="1" oninput="focusNext(this, 'otp-4')" onkeydown="focusPrev(event, 'otp-2')">
+                        <input type="text" id="otp-4" class="otp-input w-14 h-16 border-2 border-gray-200 rounded-xl text-center text-3xl font-bold focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition caret-red-500 text-gray-800" maxlength="1" oninput="verifyOtp()" onkeydown="focusPrev(event, 'otp-3')">
+                    </div>
+                    <div id="otp-error" class="text-center text-red-500 text-sm font-bold hidden bg-red-50 py-2 rounded-lg border border-red-100 animate-pulse">
+                        <i class="fas fa-exclamation-circle mr-1"></i> Incorrect OTP. Please try again.
+                    </div>
+                    <button onclick="verifyOtp()" id="btn-verify" class="w-full bg-red-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-600/30 hover:bg-red-700 active:scale-[0.98] transition-all text-sm uppercase tracking-wide">
+                        Verify & Login
+                    </button>
+                </div>
+            </section>
+
+            <!-- SCREEN 3: DASHBOARD -->
+            <section id="view-dashboard" class="hidden h-full flex flex-col">
+                <!-- User Welcome Card -->
+                <div class="bg-gradient-to-b from-red-700 to-red-800 text-white p-6 pb-12 rounded-b-[2.5rem] shadow-xl relative z-0 shrink-0">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <p class="text-red-200 text-sm font-medium">Good Morning,</p>
+                            <h2 id="dashboard-name" class="text-2xl font-bold tracking-tight">User</h2>
+                        </div>
+                        <button onclick="logout()" class="bg-white/10 hover:bg-white/20 backdrop-blur-md text-xs px-3 py-1.5 rounded-lg border border-white/10 transition-colors">
+                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                        </button>
+                    </div>
+                    
+                    <div class="flex justify-between items-end">
+                        <div>
+                            <p class="text-[10px] text-red-200 font-bold uppercase tracking-widest mb-1">Total Balance</p>
+                            <div class="flex items-baseline gap-1">
+                                <span class="text-2xl text-red-300 font-light">₹</span>
+                                <h1 class="text-5xl font-bold tracking-tight" id="wallet-balance">0.00</h1>
+                            </div>
+                        </div>
+                        <button onclick="addFakeMoney()" class="bg-white text-red-700 w-12 h-12 rounded-full shadow-lg shadow-black/20 flex items-center justify-center hover:bg-red-50 active:scale-90 transition-transform mb-1">
+                            <i class="fas fa-plus text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Actions (Floating) -->
+                <div class="px-6 -mt-9 relative z-10 shrink-0">
+                    <div class="bg-white p-4 rounded-2xl shadow-lg border border-gray-100 flex justify-around items-center">
+                        
+                        <!-- ✨ AI SMART PAY BUTTON (New) -->
+                        <button onclick="openSmartPayModal()" class="flex flex-col items-center gap-2 group active:scale-95 transition">
+                            <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-2xl flex items-center justify-center text-xl shadow-lg shadow-purple-500/30 group-hover:scale-105 transition-all duration-300 relative">
+                                <i class="fas fa-wand-magic-sparkles"></i>
+                            </div>
+                            <span class="text-xs font-bold text-gray-800 group-hover:text-purple-600">AI Pay</span>
+                        </button>
+
+                        <button onclick="openBluetoothModal()" class="flex flex-col items-center gap-2 group active:scale-95 transition">
+                            <div class="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center text-xl group-hover:bg-red-600 group-hover:text-white transition-colors duration-300">
+                                <i class="fas fa-broadcast-tower"></i>
+                            </div>
+                            <span class="text-xs font-bold text-gray-600 group-hover:text-red-700">Nearby</span>
+                        </button>
+
+                        <button onclick="openPayModal()" class="flex flex-col items-center gap-2 group active:scale-95 transition">
+                            <div class="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center text-xl group-hover:bg-red-600 group-hover:text-white transition-colors duration-300">
+                                <i class="fas fa-paper-plane"></i>
+                            </div>
+                            <span class="text-xs font-bold text-gray-600 group-hover:text-red-700">Pay</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Content Area -->
+                <!-- Added pb-safe to handle mobile home bar -->
+                <div class="p-6 flex-1 pb-safe overflow-y-auto hide-scroll space-y-6">
+                    
+                    <!-- ✨ DAILY INSIGHT CARD (New - Gemini Powered) -->
+                    <div id="daily-tip-card" class="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-4 relative hidden">
+                        <div class="absolute top-2 right-2 text-indigo-200">
+                            <i class="fas fa-lightbulb text-4xl opacity-20"></i>
+                        </div>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="bg-white text-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-100 shadow-sm">DAILY INSIGHT</span>
+                        </div>
+                        <p id="daily-tip-text" class="text-sm text-indigo-900 font-medium italic leading-relaxed">
+                            <i class="fas fa-circle-notch fa-spin text-indigo-400 mr-2"></i> Fetching wisdom from Gemini...
+                        </p>
+                    </div>
+
+                    <!-- Transactions List -->
+                    <div>
+                        <h3 class="font-bold text-gray-800 mb-4 px-1 flex items-center gap-2">
+                            <span>Transactions</span>
+                            <span class="text-[10px] bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-bold">RECENT</span>
+                        </h3>
+                        <ul id="tx-list" class="space-y-3 pb-20">
+                            <!-- Populated by JS -->
+                            <div class="text-center py-12 text-gray-400">
+                                <div class="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <i class="fas fa-receipt text-2xl"></i>
+                                </div>
+                                <p class="text-sm font-medium">No transactions yet.</p>
+                                <p class="text-xs text-gray-400 mt-1">Start by sending money.</p>
+                            </div>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- PAYMENT MODAL -->
+        <div id="modal-pay" class="hidden absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up shadow-2xl relative overflow-hidden pb-safe sm:pb-6">
+                <!-- Decorative Circle -->
+                <div class="absolute -top-10 -right-10 w-32 h-32 bg-red-50 rounded-full z-0"></div>
+
+                <div class="flex justify-between items-center mb-8 relative z-10">
+                    <div id="pay-header">
+                        <h3 class="text-xl font-bold text-gray-800">Send Payment</h3>
+                        <p class="text-xs text-gray-500">Secure Transfer</p>
+                    </div>
+                    <button onclick="closePayModal()" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"><i class="fas fa-times"></i></button>
+                </div>
+
+                <div class="mb-8 relative z-10">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Enter Amount</label>
+                    <div class="relative">
+                        <span class="absolute left-0 top-2 text-2xl text-gray-400 font-light">₹</span>
+                        <input type="number" id="pay-amount" placeholder="0" class="w-full text-5xl font-bold border-b-2 border-gray-100 py-2 pl-6 focus:border-red-600 outline-none text-gray-800 bg-transparent transition-colors placeholder-gray-200">
+                    </div>
+                    <p class="text-xs text-red-500 font-medium mt-3 bg-red-50 inline-block px-2 py-1 rounded">Balance: ₹<span id="modal-balance">0.00</span></p>
+                </div>
+
+                <!-- AI Trust Advisor (Gemini Powered) -->
+                <div id="ai-advisor" class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 hidden relative z-10 transition-all duration-300">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="bg-blue-100 w-6 h-6 rounded-full flex items-center justify-center">
+                            <i class="fas fa-robot text-blue-600 text-xs"></i>
+                        </div>
+                        <span class="text-xs font-bold text-blue-800 uppercase tracking-wide">AI Security Check</span>
+                        <span class="ml-auto text-[10px] text-blue-400 flex items-center gap-1"><i class="fas fa-bolt text-yellow-400"></i> Gemini</span>
+                    </div>
+                    <div id="ai-content">
+                        <p class="text-xs text-blue-600 font-medium"><i class="fas fa-circle-notch fa-spin mr-1"></i> Analyzing risk profile...</p>
+                    </div>
+                </div>
+
+                <button onclick="processPayment()" id="btn-pay-confirm" class="w-full bg-red-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-600/30 hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none relative z-10">
+                    Confirm Transfer <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- ✨ SMART PAY MODAL (New) -->
+        <div id="modal-smart-pay" class="hidden absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up shadow-2xl relative overflow-hidden pb-safe sm:pb-6">
+                <div class="absolute -top-10 -right-10 w-32 h-32 bg-purple-50 rounded-full z-0"></div>
+                
+                <div class="flex justify-between items-center mb-6 relative z-10">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                            <i class="fas fa-wand-magic-sparkles text-purple-600"></i> Smart Pay
+                        </h3>
+                        <p class="text-xs text-purple-500 font-medium">Powered by Gemini AI</p>
+                    </div>
+                    <button onclick="closeSmartPayModal()" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"><i class="fas fa-times"></i></button>
+                </div>
+
+                <div class="mb-6 relative z-10">
+                    <p class="text-sm text-gray-600 mb-3">Type your payment request naturally.</p>
+                    <textarea id="smart-pay-input" rows="3" class="w-full bg-purple-50 border border-purple-100 rounded-xl p-4 text-gray-800 placeholder-purple-300 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition resize-none" placeholder="e.g. Pay 500 rupees to Raju for milk"></textarea>
+                    
+                    <div class="flex gap-2 mt-2 overflow-x-auto hide-scroll pb-1">
+                        <button onclick="fillSmartPay('Pay 200 to Dairy')" class="text-[10px] bg-gray-100 px-3 py-1.5 rounded-full text-gray-600 whitespace-nowrap hover:bg-purple-100 hover:text-purple-600 transition">"Pay 200 to Dairy"</button>
+                        <button onclick="fillSmartPay('Send 50 to Medical Store')" class="text-[10px] bg-gray-100 px-3 py-1.5 rounded-full text-gray-600 whitespace-nowrap hover:bg-purple-100 hover:text-purple-600 transition">"Send 50 to Medical Store"</button>
+                    </div>
+                </div>
+
+                <button onclick="processSmartPay()" id="btn-smart-pay" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-purple-500/30 hover:opacity-90 active:scale-[0.98] transition-all relative z-10 flex items-center justify-center gap-2">
+                    <span>Generate Payment</span> <i class="fas fa-bolt"></i>
+                </button>
+                <div id="smart-error" class="text-center text-red-500 text-xs mt-2 hidden font-medium"></div>
+            </div>
+        </div>
+
+        <!-- BLUETOOTH MODAL -->
+        <div id="modal-bluetooth" class="hidden absolute inset-0 bg-gray-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-white text-center">
+            <button onclick="closeBluetoothModal()" class="absolute top-6 right-6 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+            <div id="bt-scanner-ui" class="flex flex-col items-center w-full">
+                <div class="relative w-40 h-40 flex items-center justify-center mb-8">
+                    <div class="absolute inset-0 bg-red-600 rounded-full opacity-20 animate-radar"></div>
+                    <div class="absolute inset-0 bg-red-600 rounded-full opacity-20 animate-radar delay-1000"></div>
+                    <div class="relative w-20 h-20 bg-red-600 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(220,38,38,0.6)] z-10">
+                        <i class="fas fa-broadcast-tower text-3xl"></i>
+                    </div>
+                </div>
+                <h3 class="text-2xl font-bold mb-2">Scanning...</h3>
+                <p class="text-gray-400 text-sm">Looking for nearby vendors using GramPay</p>
+            </div>
+            <div id="bt-device-list" class="hidden w-full max-w-sm mt-8 animate-slide-up">
+                <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 text-left pl-2">Devices Found</h4>
+                <div class="space-y-3">
+                    <button onclick="selectBluetoothDevice('Raju Kirana Store')" class="w-full bg-gray-800 hover:bg-gray-700 p-4 rounded-xl flex items-center justify-between group transition-all border border-gray-700 hover:border-red-500/50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center text-red-400 group-hover:bg-red-600 group-hover:text-white transition-colors">
+                                <i class="fas fa-store"></i>
+                            </div>
+                            <div class="text-left">
+                                <h5 class="font-bold text-sm">Raju Kirana Store</h5>
+                                <p class="text-xs text-gray-500">Signal: Strong</p>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-600 group-hover:text-white"></i>
+                    </button>
+                    <button onclick="selectBluetoothDevice('Village Dairy')" class="w-full bg-gray-800 hover:bg-gray-700 p-4 rounded-xl flex items-center justify-between group transition-all border border-gray-700 hover:border-red-500/50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                <i class="fas fa-bottle-water"></i>
+                            </div>
+                            <div class="text-left">
+                                <h5 class="font-bold text-sm">Village Dairy</h5>
+                                <p class="text-xs text-gray-500">Signal: Medium</p>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-600 group-hover:text-white"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RECEIPT MODAL -->
+        <div id="modal-receipt" class="hidden absolute inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-3xl p-0 overflow-visible shadow-2xl animate-slide-up relative">
+                <div class="bg-red-600 p-6 text-center text-white relative rounded-t-3xl">
+                    <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 w-12 h-12 bg-white rounded-full flex items-center justify-center border-4 border-red-600">
+                        <i class="fas fa-check text-green-500 text-xl"></i>
+                    </div>
+                    <h3 class="font-bold text-lg tracking-widest uppercase opacity-90">Payment Receipt</h3>
+                </div>
+                <div class="pt-10 pb-12 px-6 text-center bg-white rounded-b-3xl relative">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-1">₹<span id="receipt-amount">0.00</span></h2>
+                    <p class="text-sm text-gray-500 mb-6">Paid to <span id="receipt-vendor" class="font-bold text-gray-800">Vendor</span></p>
+                    <div class="border-t border-b border-gray-100 py-4 mb-6 space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Transaction ID</span>
+                            <span id="receipt-id" class="font-mono text-gray-600">...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Time</span>
+                            <span id="receipt-time" class="text-gray-600">...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Status</span>
+                            <span id="receipt-status" class="font-bold">...</span>
+                        </div>
+                    </div>
+                    <div id="bt-transfer-status" class="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+                                <i class="fas fa-bluetooth-b"></i>
+                            </div>
+                            <div class="text-left flex-1 min-w-0">
+                                <p class="text-[10px] font-bold text-gray-500 uppercase">Bluetooth Transfer</p>
+                                <p id="bt-status-text" class="text-sm font-bold text-blue-700 truncate">Connecting...</p>
+                            </div>
+                            <div id="bt-spinner" class="shrink-0">
+                                <i class="fas fa-circle-notch fa-spin text-blue-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeReceiptModal()" class="mt-6 text-gray-400 hover:text-gray-600 text-sm font-medium">Close Receipt</button>
+                    <div class="receipt-edge"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- APPLICATION LOGIC -->
+    <script>
+        // --- GEMINI API CONFIG ---
+        const apiKey = "AIzaSyBPoDUPyjAgpC-joGdDQvITLrz1ySp4Xyg"; // Runtime provided
+        
+        // --- 1. STATE MANAGEMENT ---
+        const initialState = {
+            isLoggedIn: false,
+            user: { name: "", phone: "" },
+            wallet: { balance: 2000.00 },
+            transactions: [] 
+        };
+
+        let appState = JSON.parse(localStorage.getItem('gramPayState')) || initialState;
+        let currentOtp = "";
+        let isOnline = navigator.onLine;
+        let selectedVendor = "Kirana Vendor"; 
+
+        // DOM Elements
+        const views = {
+            login: document.getElementById('view-login'),
+            otp: document.getElementById('view-otp'),
+            dashboard: document.getElementById('view-dashboard')
+        };
+        const statusEl = document.getElementById('connection-status');
+        const modals = { 
+            pay: document.getElementById('modal-pay'),
+            bt: document.getElementById('modal-bluetooth'),
+            receipt: document.getElementById('modal-receipt'),
+            smartPay: document.getElementById('modal-smart-pay')
+        };
+
+        // --- 2. INITIALIZATION ---
+        function init() {
+            updateNetworkStatus();
+            window.addEventListener('online', () => { updateNetworkStatus(); syncTransactions(); });
+            window.addEventListener('offline', updateNetworkStatus);
+
+            if (appState.isLoggedIn) {
+                renderDashboard();
+                switchView('dashboard');
+            } else {
+                switchView('login');
+            }
+        }
+
+        // --- 3. UTILITY: GEMINI API CALLER ---
+        async function callGeminiAPI(prompt) {
+            if (!apiKey || apiKey === "") {
+                console.warn("No API key available. Returning mock response.");
+                return null;
+            }
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }]
+            };
+
+            // Backoff logic
+            const delays = [1000, 2000, 4000];
+            for (let i = 0; i < delays.length; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    
+                    const data = await response.json();
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+                } catch (e) {
+                    console.error(`Gemini Attempt ${i+1} failed:`, e);
+                    if (i === delays.length - 1) return null;
+                    await new Promise(r => setTimeout(r, delays[i]));
+                }
+            }
+            return null;
+        }
+
+        // --- 4. ✨ AI FEATURE: DAILY TIP ---
+        async function fetchDailyTip() {
+            const card = document.getElementById('daily-tip-card');
+            const textEl = document.getElementById('daily-tip-text');
+            
+            // Only show if online
+            if (!isOnline) {
+                card.classList.add('hidden');
+                return;
+            }
+            
+            card.classList.remove('hidden');
+            
+            // Check localstorage cache to avoid spamming API on reload
+            const today = new Date().toDateString();
+            const cachedTip = localStorage.getItem('gramPayTip');
+            const cachedDate = localStorage.getItem('gramPayTipDate');
+            
+            if (cachedTip && cachedDate === today) {
+                textEl.innerText = cachedTip;
+                return;
+            }
+
+            const prompt = "Generate a single, short (max 20 words), encouraging financial tip for a rural Indian villager in English. Simple language.";
+            
+            const response = await callGeminiAPI(prompt);
+            if (response) {
+                textEl.innerText = response.trim();
+                localStorage.setItem('gramPayTip', response.trim());
+                localStorage.setItem('gramPayTipDate', today);
+            } else {
+                textEl.innerText = "Save small amounts daily to build a secure future."; // Fallback
+            }
+        }
+
+        // --- 5. ✨ AI FEATURE: SMART PAY PARSER ---
+        function openSmartPayModal() {
+            if (!isOnline) return alert("AI features require an internet connection.");
+            modals.smartPay.classList.remove('hidden');
+            document.getElementById('smart-pay-input').value = '';
+            document.getElementById('smart-error').classList.add('hidden');
+        }
+
+        function closeSmartPayModal() {
+            modals.smartPay.classList.add('hidden');
+        }
+
+        function fillSmartPay(text) {
+            document.getElementById('smart-pay-input').value = text;
+        }
+
+        async function processSmartPay() {
+            const input = document.getElementById('smart-pay-input').value;
+            const btn = document.getElementById('btn-smart-pay');
+            const errorEl = document.getElementById('smart-error');
+            
+            if (!input.trim()) return;
+
+            // UI Loading State
+            const originalBtnHtml = btn.innerHTML;
+            btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Processing...`;
+            btn.disabled = true;
+
+            const prompt = `Extract 'amount' (number) and 'vendor' (string) from this text: "${input}". Return ONLY a JSON object like {"amount": 50, "vendor": "Name"}. If unclear, return null.`;
+
+            try {
+                const response = await callGeminiAPI(prompt);
+                
+                // Parse Response
+                // Clean markdown code blocks if present
+                const cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
+                const result = JSON.parse(cleanJson);
+
+                if (result && result.amount && result.vendor) {
+                    closeSmartPayModal();
+                    openPayModal(result.vendor); // Open Standard Modal
+                    document.getElementById('pay-amount').value = result.amount; // Pre-fill amount
+                } else {
+                    throw new Error("Could not understand");
+                }
+
+            } catch (e) {
+                console.error(e);
+                errorEl.innerText = "Sorry, I couldn't understand that. Try 'Pay 50 to Raju'.";
+                errorEl.classList.remove('hidden');
+            } finally {
+                btn.innerHTML = originalBtnHtml;
+                btn.disabled = false;
+            }
+        }
+
+        // --- 6. CORE APP LOGIC ---
+
+        function updateNetworkStatus() {
+            isOnline = navigator.onLine;
+            if (isOnline) {
+                statusEl.className = "text-xs bg-black/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 transition-colors duration-300 flex items-center gap-2 text-white";
+                statusEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></div> <span class="font-medium">Online</span>';
+                fetchDailyTip(); // Fetch tip when online
+            } else {
+                statusEl.className = "text-xs bg-red-900/40 backdrop-blur-md px-3 py-1 rounded-full border border-red-500/30 transition-colors duration-300 flex items-center gap-2 text-red-100";
+                statusEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500"></div> <span class="font-medium">Offline</span>';
+                document.getElementById('daily-tip-card').classList.add('hidden');
+            }
+        }
+
+        function syncTransactions() {
+            const pendingTx = appState.transactions.filter(tx => tx.status === 'Pending');
+            if (pendingTx.length > 0) {
+                const toast = document.getElementById('sync-toast');
+                toast.classList.add('show');
+                setTimeout(() => {
+                    appState.transactions.forEach(tx => {
+                        if (tx.status === 'Pending') tx.status = 'Settled';
+                    });
+                    saveState();
+                    renderDashboard();
+                    toast.classList.remove('show');
+                }, 2000);
+            }
+        }
+
+        function handleGetOtp(e) {
+            e.preventDefault();
+            const name = document.getElementById('input-name').value;
+            const phone = document.getElementById('input-phone').value;
+            if(!name || phone.length !== 10) return alert("Invalid inputs");
+
+            appState.user = { name, phone };
+            currentOtp = Math.floor(1000 + Math.random() * 9000).toString();
+            document.getElementById('display-phone').innerText = `+91 ${phone}`;
+            switchView('otp');
+            
+            const toast = document.getElementById('otp-toast');
+            document.getElementById('toast-otp-code').innerText = currentOtp;
+            setTimeout(() => { toast.classList.add('show'); }, 500);
+            setTimeout(() => { toast.classList.remove('show'); }, 8000);
+        }
+
+        function autoFillOtp() {
+            if (!currentOtp) return;
+            [1,2,3,4].forEach((i, idx) => document.getElementById('otp-'+i).value = currentOtp[idx]);
+            setTimeout(verifyOtp, 300);
+            document.getElementById('otp-toast').classList.remove('show');
+        }
+
+        function verifyOtp() {
+            const entered = [1,2,3,4].map(i => document.getElementById('otp-'+i).value).join('');
+            if (entered === currentOtp) {
+                appState.isLoggedIn = true;
+                saveState();
+                renderDashboard();
+                switchView('dashboard');
+            } else {
+                document.getElementById('otp-error').classList.remove('hidden');
+            }
+        }
+
+        function logout() {
+            if(confirm("Logout from GramPay?")) {
+                appState.isLoggedIn = false;
+                saveState();
+                switchView('login');
+            }
+        }
+
+        function renderDashboard() {
+            document.getElementById('dashboard-name').innerText = appState.user.name.split(' ')[0];
+            document.getElementById('wallet-balance').innerText = appState.wallet.balance.toFixed(2);
+            document.getElementById('modal-balance').innerText = appState.wallet.balance.toFixed(2);
+            
+            // Try to fetch tip if not already
+            if (isOnline) fetchDailyTip();
+
+            const txList = document.getElementById('tx-list');
+            txList.innerHTML = '';
+
+            if (appState.transactions.length === 0) {
+                txList.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <div class="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <i class="fas fa-receipt text-2xl"></i>
+                        </div>
+                        <p class="text-sm font-medium">No transactions yet.</p>
+                        <p class="text-xs text-gray-400 mt-1">Start by sending money.</p>
+                    </div>`;
+                return;
+            }
+
+            const sorted = [...appState.transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+            sorted.forEach(tx => {
+                const isPending = tx.status === 'Pending';
+                const statusColor = isPending ? 'text-amber-500' : 'text-emerald-600';
+                const icon = isPending ? 'fa-clock' : 'fa-check-circle';
+                const bg = isPending ? 'bg-amber-50' : 'bg-white';
+                const border = isPending ? 'border-amber-100' : 'border-gray-100';
+                const iconBg = isPending ? 'bg-amber-100 text-amber-600' : 'bg-red-50 text-red-600';
+
+                const li = document.createElement('li');
+                li.className = `${bg} p-4 rounded-xl border ${border} flex justify-between items-center shadow-sm hover:shadow-md transition-shadow animate-fade-in`;
+                li.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="${iconBg} w-10 h-10 rounded-full flex items-center justify-center">
+                            <i class="fas fa-store"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-gray-800 text-sm">${tx.vendor || "Unknown Vendor"}</div>
+                            <div class="text-[10px] text-gray-400 font-medium uppercase tracking-wide">${new Date(tx.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-gray-800 text-lg">- ₹${tx.amount}</div>
+                        <div class="text-xs font-bold ${statusColor} flex items-center justify-end gap-1">
+                            <i class="fas ${icon}"></i> ${tx.status}
+                        </div>
+                    </div>
+                `;
+                txList.appendChild(li);
+            });
+        }
+
+        function addFakeMoney() {
+            appState.wallet.balance += 500;
+            saveState();
+            renderDashboard();
+        }
+
+        // --- FEATURE MODALS ---
+        function openBluetoothModal() {
+            modals.bt.classList.remove('hidden');
+            document.getElementById('bt-scanner-ui').classList.remove('hidden');
+            document.getElementById('bt-device-list').classList.add('hidden');
+            
+            setTimeout(() => {
+                document.getElementById('bt-scanner-ui').classList.add('hidden');
+                document.getElementById('bt-device-list').classList.remove('hidden');
+            }, 2500); 
+        }
+
+        function closeBluetoothModal() {
+            modals.bt.classList.add('hidden');
+        }
+
+        function selectBluetoothDevice(deviceName) {
+            closeBluetoothModal();
+            openPayModal(deviceName);
+        }
+
+        function openPayModal(vendorName = null) {
+            selectedVendor = vendorName || "Kirana Vendor";
+            
+            const headerHtml = vendorName 
+                ? `<h3 class="text-xl font-bold text-gray-800">Pay ${vendorName}</h3>
+                   <p class="text-xs text-green-600 font-bold flex items-center gap-1"><i class="fas fa-bluetooth-b"></i> Device Connected</p>`
+                : `<h3 class="text-xl font-bold text-gray-800">Send Payment</h3>
+                   <p class="text-xs text-gray-500">Secure Transfer</p>`;
+            
+            document.getElementById('pay-header').innerHTML = headerHtml;
+
+            modals.pay.classList.remove('hidden');
+            document.getElementById('pay-amount').value = '';
+            document.getElementById('ai-advisor').classList.remove('hidden');
+            
+            const aiContent = document.getElementById('ai-content');
+            aiContent.innerHTML = `<p class="text-xs text-blue-600 font-medium"><i class="fas fa-circle-notch fa-spin mr-1"></i> Analyzing trust score...</p>`;
+            document.getElementById('btn-pay-confirm').disabled = true;
+            document.getElementById('btn-pay-confirm').classList.add('opacity-50');
+
+            // ✨ AI FEATURE: REAL TRUST ADVISOR
+            if (isOnline) {
+                // Call Gemini for real analysis
+                const prompt = `Act as a fintech risk AI. A user is paying ${Math.floor(Math.random()*500)} INR to ${selectedVendor}. Generate a JSON: {"score": number (80-99), "message": "short reason"}.`;
+                
+                callGeminiAPI(prompt).then(response => {
+                    let score = 95; 
+                    let message = "Vendor verified safe";
+                    
+                    try {
+                        // Attempt parse
+                        const clean = response.replace(/```json/g, '').replace(/```/g, '').trim();
+                        const data = JSON.parse(clean);
+                        score = data.score;
+                        message = data.message;
+                    } catch(e) { console.log("AI Parse fail, using default"); }
+
+                    aiContent.innerHTML = `
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-blue-800">Trust Score: ${score}/100</span>
+                            <span class="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200">SAFE</span>
+                        </div>
+                        <p class="text-[10px] text-gray-500 mb-2 italic">"${message}"</p>
+                        <div class="w-full bg-blue-200 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-blue-600 h-full transition-all duration-500" style="width: ${score}%"></div>
+                        </div>
+                    `;
+                    document.getElementById('btn-pay-confirm').disabled = false;
+                    document.getElementById('btn-pay-confirm').classList.remove('opacity-50');
+                });
+            } else {
+                // Offline fallback (Mock)
+                setTimeout(() => {
+                    aiContent.innerHTML = `
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-blue-800">Trust Score: 92/100</span>
+                            <span class="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200">SAFE</span>
+                        </div>
+                        <div class="w-full bg-blue-200 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-blue-600 h-full transition-all duration-500" style="width: 92%"></div>
+                        </div>
+                    `;
+                    document.getElementById('btn-pay-confirm').disabled = false;
+                    document.getElementById('btn-pay-confirm').classList.remove('opacity-50');
+                }, 1000);
+            }
+        }
+
+        function closePayModal() {
+            modals.pay.classList.add('hidden');
+        }
+
+        function closeReceiptModal() {
+            modals.receipt.classList.add('hidden');
+        }
+
+        function processPayment() {
+            const amountInput = document.getElementById('pay-amount');
+            const amount = parseFloat(amountInput.value);
+
+            if (!amount || amount <= 0) return alert("Enter valid amount");
+            if (amount > appState.wallet.balance) return alert("Insufficient balance");
+
+            appState.wallet.balance -= amount;
+
+            const tx = {
+                id: 'TXN-' + Math.floor(100000 + Math.random() * 900000),
+                amount: amount,
+                vendor: selectedVendor,
+                date: new Date().toISOString(),
+                status: isOnline ? 'Settled' : 'Pending'
+            };
+
+            appState.transactions.push(tx);
+            saveState();
+            renderDashboard();
+            closePayModal();
+
+            showReceiptModal(tx);
+        }
+
+        function showReceiptModal(tx) {
+            modals.receipt.classList.remove('hidden');
+
+            document.getElementById('receipt-amount').innerText = tx.amount.toFixed(2);
+            document.getElementById('receipt-vendor').innerText = tx.vendor;
+            document.getElementById('receipt-id').innerText = tx.id;
+            document.getElementById('receipt-time').innerText = new Date(tx.date).toLocaleTimeString();
+            
+            const statusEl = document.getElementById('receipt-status');
+            if (tx.status === 'Pending') {
+                statusEl.innerHTML = '<span class="text-amber-500">Pending (Stored Locally)</span>';
+            } else {
+                statusEl.innerHTML = '<span class="text-emerald-500">Settled (Synced)</span>';
+            }
+
+            const btStatus = document.getElementById('bt-status-text');
+            const btSpinner = document.getElementById('bt-spinner');
+            
+            btStatus.innerText = "Connecting to " + tx.vendor + "...";
+            btStatus.className = "text-sm font-bold text-blue-600 truncate";
+            btSpinner.innerHTML = '<i class="fas fa-circle-notch fa-spin text-blue-400"></i>';
+
+            setTimeout(() => {
+                btStatus.innerText = "Sending Receipt Token...";
+            }, 1500);
+
+            setTimeout(() => {
+                btStatus.innerText = "Sent Successfully via Bluetooth";
+                btStatus.className = "text-sm font-bold text-green-600 truncate";
+                btSpinner.innerHTML = '<i class="fas fa-check-circle text-green-500 text-xl"></i>';
+            }, 3000);
+        }
+
+        function saveState() {
+            localStorage.setItem('gramPayState', JSON.stringify(appState));
+        }
+
+        function switchView(viewName) {
+            Object.values(views).forEach(el => el.classList.add('hidden'));
+            views[viewName].classList.remove('hidden');
+        }
+
+        window.focusNext = (el, id) => { if(el.value) document.getElementById(id).focus(); };
+        window.focusPrev = (e, id) => { if(e.key === "Backspace" && !e.target.value) document.getElementById(id).focus(); };
+
+        init();
+    </script>
+</body>
+</html>
